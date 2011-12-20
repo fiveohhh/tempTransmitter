@@ -1,97 +1,159 @@
-#include <VirtualWire.h>
-#include <EEPROM.h>
-#undef int
-#undef abs
-#undef double
-#undef float
-#undef round
-/*
-  AnalogReadSerial
- Reads an analog input on pin 0, prints the result to the serial monitor 
- 
- This example code is in the public domain.
- */
+#include <Wire.h>
 
-// number of seconds between reads
-#define INTERVAL 60
-#define DEBUG_INTERVAL 5
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
-#define NUMBER_OF_SENSORS 2
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 3
 
-#define EEPROM_SIZE_IN_BYTES 1000
+#define disk1 0x50    //Address of 24LC256 eeprom chip
 
-#define DEBUG_MODE_PIN 8
+#define EEPROM_SIZE 32768
 
-uint8_t pinsWithTempSensors[NUMBER_OF_SENSORS] = {0,1/*,2*/};
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
 
-// correct sensor 
-int8_t adcErrorCorrection[NUMBER_OF_SENSORS] = {-1, -3/*, -2*/};
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
 
-unsigned long prevSeconds = 0;
+// arrays to hold device address
+DeviceAddress insideThermometer;
 
-void setup() {
-  Serial.begin(57600);
-  
-  // Initialise the IO and ISR
-    vw_set_ptt_inverted(true); // Required for DR3100
-    vw_setup(2000);	 // Bits per sec
-    analogReference(EXTERNAL);
-    pinMode(DEBUG_MODE_PIN, INPUT);
-    
-}
-
-void loop() { 
-  int interval = INTERVAL;
-  if (digitalRead(DEBUG_MODE_PIN) == HIGH)
-  {
-     interval = DEBUG_INTERVAL;
-  }
-  unsigned long seconds = millis()/1000;
-  if ((prevSeconds == 0) || (seconds - prevSeconds) > (interval))
-  {
-     prevSeconds = millis()/1000;
-    int i = 0;
-    for (i = 0; i < NUMBER_OF_SENSORS; i++)
-    {
-        //*************Read and transmit sensor
-      int sensorVal = analogRead(i);
-      double sensorKel = ((sensorVal/(double)1023)*(5*100)) + adcErrorCorrection[i];
-      // get rid of decimal place, truncate anything after 2 places
-      int sensorTimeHundred = sensorKel * 100;
-      Serial.print("Sensor ");
-      Serial.print(i);
-      Serial.print(" Kelvin: ");
-      Serial.println(sensorKel);
-      char msg[12];
-      sprintf(msg,"TMP1%d%d", i, sensorTimeHundred);
-      
-      digitalWrite(13, true); // Flash a light to show transmitting
-      Serial.println(msg);
-      vw_send((uint8_t *)msg, strlen(msg));
-      vw_wait_tx(); // Wait until the whole message is gone
-      delay(1000);
-      digitalWrite(13, false);
-    } 
-  }
-  Serial.println(prevSeconds, DEC);
-  Serial.println(millis()/1000);
-  if((seconds - prevSeconds) > (interval))
-  {
-    Serial.println("We Here!!!!");
-  }
-  delay(1000);
-}
-
-char *ftoa(char *a, double f, int precision)
+void setup(void)
 {
-  long p[] = {0,10,100,1000,10000,100000,1000000,10000000,100000000};
+  // start serial port
+  Serial.begin(57600);
+  Serial.println("Dallas Temperature IC Control Library Demo");
+Wire.begin(); 
+  // locate devices on the bus
+  Serial.print("Locating devices...");
+  sensors.begin();
+  Serial.print("Found ");
+  Serial.print(sensors.getDeviceCount(), DEC);
+  Serial.println(" devices.");
+
+  // report parasite power requirements
+  Serial.print("Parasite power is: "); 
+  if (sensors.isParasitePowerMode()) Serial.println("ON");
+  else Serial.println("OFF");
   
-  char *ret = a;
-  long heiltal = (long)f;
-  itoa(heiltal, a, 10);
-  while (*a != '\0') a++;
-  *a++ = '.';
-  long desimal = abs((long)((f - heiltal) * p[precision]));
-  itoa(desimal, a, 10);
-  return ret;
+  // assign address manually.  the addresses below will beed to be changed
+  // to valid device addresses on your bus.  device address can be retrieved
+  // by using either oneWire.search(deviceAddress) or individually via
+  // sensors.getAddress(deviceAddress, index)
+  //insideThermometer = { 0x28, 0x1D, 0x39, 0x31, 0x2, 0x0, 0x0, 0xF0 };
+
+  // Method 1:
+  // search for devices on the bus and assign based on an index.  ideally,
+  // you would do this to initially discover addresses on the bus and then 
+  // use those addresses and manually assign them (see above) once you know 
+  // the devices on your bus (and assuming they don't change).
+  if (!sensors.getAddress(insideThermometer, 0)) Serial.println("Unable to find address for Device 0"); 
+  
+  // method 2: search()
+  // search() looks for the next device. Returns 1 if a new address has been
+  // returned. A zero might mean that the bus is shorted, there are no devices, 
+  // or you have already retrieved all of them.  It might be a good idea to 
+  // check the CRC to make sure you didn't get garbage.  The order is 
+  // deterministic. You will always get the same devices in the same order
+  //
+  // Must be called before search()
+  //oneWire.reset_search();
+  // assigns the first address found to insideThermometer
+  //if (!oneWire.search(insideThermometer)) Serial.println("Unable to find address for insideThermometer");
+
+  // show the addresses we found on the bus
+  Serial.print("Device 0 Address: ");
+  printAddress(insideThermometer);
+  Serial.println();
+
+  // set the resolution to 9 bit (Each Dallas/Maxim device is capable of several different resolutions)
+  sensors.setResolution(insideThermometer, 9);
+ 
+  Serial.print("Device 0 Resolution: ");
+  Serial.print(sensors.getResolution(insideThermometer), DEC); 
+  Serial.println();
 }
+
+// function to print the temperature for a device
+void printTemperature(DeviceAddress deviceAddress)
+{
+  // method 1 - slower
+  //Serial.print("Temp C: ");
+  //Serial.print(sensors.getTempC(deviceAddress));
+  //Serial.print(" Temp F: ");
+  //Serial.print(sensors.getTempF(deviceAddress)); // Makes a second call to getTempC and then converts to Fahrenheit
+
+  // method 2 - faster
+  float tempC = sensors.getTempC(deviceAddress);
+  Serial.print("Temp C: ");
+  Serial.print(tempC);
+  Serial.print(" Temp F: ");
+  Serial.println(DallasTemperature::toFahrenheit(tempC)); // Converts tempC to Fahrenheit
+}
+
+void loop(void)
+{ 
+  if (Serial.available() > 0)
+  {
+    char c = Serial.read();
+    Serial.flush();
+       for (int index = 0; index < EEPROM_SIZE; index++)
+        {
+        
+          uint8_t b = readEEPROM(disk1, index);
+          char m[3];
+          sprintf(m,"%02X",b);
+          Serial.print(m);
+          if (((index + 1) % 32) == 0)
+          {
+            Serial.println();
+          }
+        }
+
+    
+  }
+  // call sensors.requestTemperatures() to issue a global temperature 
+  // request to all devices on the bus
+  Serial.print("Requesting temperatures...");
+  sensors.requestTemperatures(); // Send the command to get temperatures
+  Serial.println("DONE");
+  
+  // It responds almost immediately. Let's print out the data
+  printTemperature(insideThermometer); // Use a simple function to print out the data
+}
+
+// function to print a device address
+void printAddress(DeviceAddress deviceAddress)
+{
+  for (uint8_t i = 0; i < 8; i++)
+  {
+    if (deviceAddress[i] < 16) Serial.print("0");
+    Serial.print(deviceAddress[i], HEX);
+  }
+}
+
+
+void writeEEPROM(int deviceaddress, unsigned int eeaddress, byte data ) {
+  Wire.beginTransmission(deviceaddress);
+  Wire.send((int)(eeaddress >> 8));   // MSB
+  Wire.send((int)(eeaddress & 0xFF)); // LSB
+  Wire.send(data);
+  Wire.endTransmission();
+  delay(5);
+
+}
+
+byte readEEPROM(int deviceaddress, unsigned int eeaddress ) {
+  byte rdata = 0xFF;
+  
+  Wire.beginTransmission(deviceaddress);
+  Wire.send((int)(eeaddress >> 8));   // MSB
+  Wire.send((int)(eeaddress & 0xFF)); // LSB
+  Wire.endTransmission();
+  Wire.requestFrom(deviceaddress,1);
+ 
+  if (Wire.available()) rdata = Wire.receive();
+  return rdata;
+}
+
