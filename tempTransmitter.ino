@@ -37,7 +37,7 @@
 uint8_t pinsWithTempSensors[NUMBER_OF_SENSORS] = {0,1/*,2*/};
 
 // correct sensor 
-int8_t adcErrorCorrection[NUMBER_OF_SENSORS] = {-1, -3/*, -2*/};
+int8_t adcErrorCorrection[NUMBER_OF_SENSORS] = {2, 1/*, -2*/};
 
 int doorStatus = 0; // 0 is closed and 1 is open.
 
@@ -51,6 +51,7 @@ void setup() {
     vw_setup(2000);	 // Bits per sec
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
+    digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
     pinMode(GARAGE_DOOR_PIN, INPUT);
     digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
     
@@ -65,11 +66,9 @@ void loop() {
      tempInterval = DEBUG_INTERVAL;
   }
   
+  // get current door status
   int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
-  Serial.print("new: ");
-  Serial.println(newDoorStatus);
-  Serial.print("old: ");
-  Serial.println(doorStatus);
+
   if ((newDoorStatus == LOW) && (doorStatus == 1))
   {
     // was open and now closed
