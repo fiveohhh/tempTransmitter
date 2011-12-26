@@ -7,10 +7,7 @@
 #undef float
 #undef round
 /*
-  AnalogReadSerial
- Reads an analog input on pin 0, prints the result to the serial monitor 
- 
- This example code is in the public domain.
+
  */
  
  void sendVWmsg(char * msg);
@@ -33,7 +30,9 @@
 
 #define DEBUG_MODE_PIN 8 // pin to pull high if we want debug interval
 
-#define GARAGE_DOOR_PIN "unknown"// figure this out when you get hardware up here
+#define GARAGE_DOOR_PIN 7// figure this out when you get hardware up here
+
+#define GARAGE_DOOR_SENSOR_NUMBER 0 // Garage door sensor number is 0
 
 uint8_t pinsWithTempSensors[NUMBER_OF_SENSORS] = {0,1/*,2*/};
 
@@ -53,27 +52,49 @@ void setup() {
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
     pinMode(GARAGE_DOOR_PIN, INPUT);
+    digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
     
 }
 
 void loop() { 
   int tempInterval = TEMP_INTERVAL;
-
+  
+  
   if (digitalRead(DEBUG_MODE_PIN) == HIGH)
   {
      tempInterval = DEBUG_INTERVAL;
   }
   
-  if (digitalRead(GARAGE_DOOR_PIN) == HIGH && doorStatus == 1)
+  int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
+  Serial.print("new: ");
+  Serial.println(newDoorStatus);
+  Serial.print("old: ");
+  Serial.println(doorStatus);
+  if ((newDoorStatus == LOW) && (doorStatus == 1))
   {
     // was open and now closed
     //send update msg
+    doorStatus = 0;
+    char dmsg[12];
+    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 0);
+      
+    sendVWmsg(dmsg);
   }
-  else if (digitalRead(GARAGE_DOOR_PIN) == LOW && doorStatus == 0)
+  else if ((newDoorStatus == HIGH) && (doorStatus == 0))
   {
     // was closed and now open
     //send update msg
+    doorStatus = 1;
+    char dmsg[12];
+    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 1);
+      
+    sendVWmsg(dmsg);
   }
+  
+  //pinMode(GARAGE_DOOR_PIN, OUTPUT); // set to output when were not using so that we aren't constantly
+                                    // dumping power into the switch. 
+                                    //Need since switch is NC when door is shut
+  //digitalWrite(GARAGE_DOOR_PIN, LOW);
   
   unsigned long seconds = millis()/1000;
   if ((prevSeconds == 0) || (seconds - prevSeconds) > (tempInterval))
@@ -90,9 +111,8 @@ void loop() {
         sensorVal = analogRead(i);
         Serial.print("reading1: ");
         Serial.println(sensorVal);
-        delay(100)
+        delay(100);
         int sensorVal2 = analogRead(i);
-        sensorVal = analogRead(i);
         Serial.print("reading2: ");
         Serial.println(sensorVal2);
 
