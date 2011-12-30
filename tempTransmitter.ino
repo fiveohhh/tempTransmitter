@@ -1,4 +1,5 @@
-
+#include <OneWire.h>
+#include <DallasTemperature.h>
 #include <VirtualWire.h>
 #include <EEPROM.h>
 #undef int
@@ -10,34 +11,32 @@
 
  */
  
- void sendVWmsg(char * msg);
+void sendVWmsg(char * msg);
+
+// Data wire is plugged into port 2 on the Arduino
+#define ONE_WIRE_BUS 2
+
+// Setup a oneWire instance to communicate with any OneWire devices (not just Maxim/Dallas temperature ICs)
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature. 
+DallasTemperature sensors(&oneWire);
+
+// device addresses
+DeviceAddress garageThermometer = { 0x10, 0xA9, 0x30, 0x1A, 0x02, 0x08, 0x00, 0xAF };
+DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
+
 
 // number of seconds between reads
 #define TEMP_INTERVAL 60
 
 #define DEBUG_INTERVAL 5 // number of seconds between reads during if debug pin is set
 
-#define NUMBER_OF_SENSORS 2
-
-#define READ_ATTEMPTS 2 // number of times to try to get two consecutive temps in a row
-                        // added this since there were some outliers in the readings
-                        // This will make sure we get two in a row that are close before 
-                        // recording them
-                        // if we don't get expected readings after this, we will record the 
-                        // last one
-
-// #define EEPROM_SIZE_IN_BYTES 1000
-
 #define DEBUG_MODE_PIN 8 // pin to pull high if we want debug interval
 
 #define GARAGE_DOOR_PIN 7// figure this out when you get hardware up here
 
 #define GARAGE_DOOR_SENSOR_NUMBER 0 // Garage door sensor number is 0
-
-uint8_t pinsWithTempSensors[NUMBER_OF_SENSORS] = {0,1/*,2*/};
-
-// correct sensor 
-int8_t adcErrorCorrection[NUMBER_OF_SENSORS] = {2, 1/*, -2*/};
 
 int doorStatus = 0; // 0 is closed and 1 is open.
 
@@ -51,10 +50,19 @@ void setup() {
     vw_setup(2000);	 // Bits per sec
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
-    digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
+    digitalWrite(DEBUG_MODE_PIN, HIGH); // turn on pullups
     pinMode(GARAGE_DOOR_PIN, INPUT);
     digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
     
+  // Start up the library
+  sensors.begin();
+
+  // locate devices on the bus
+  Serial.print("Locating devices...");
+  Serial.print("Found ");
+  Serial.print(sensors.getDeviceCount(), DEC);
+  Serial.println(" devices.");
+   
 }
 
 void loop() { 
@@ -90,62 +98,42 @@ void loop() {
     sendVWmsg(dmsg);
   }
   
-  //pinMode(GARAGE_DOOR_PIN, OUTPUT); // set to output when were not using so that we aren't constantly
-                                    // dumping power into the switch. 
-                                    //Need since switch is NC when door is shut
-  //digitalWrite(GARAGE_DOOR_PIN, LOW);
   
   unsigned long seconds = millis()/1000;
   if ((prevSeconds == 0) || (seconds - prevSeconds) > (tempInterval))
   {
      prevSeconds = millis()/1000;
-    int i = 0;
-    for (i = 0; i < NUMBER_OF_SENSORS; i++)
-    {
-        //*************Read and transmit sensor
-      int sensorVal = 0;
-      for (int j = 0; j < READ_ATTEMPTS; j++)
-      {
+     sensors.requestTemperatures();
+     delay(1000); // need to delay after request since we are using parasitic power
 
-        sensorVal = analogRead(i);
-        Serial.print("reading1: ");
-        Serial.println(sensorVal);
-        delay(100);
-        int sensorVal2 = analogRead(i);
-        Serial.print("reading2: ");
-        Serial.println(sensorVal2);
-
-        // if second reading was +/- 5 from first reading, call it good
-        if ((sensorVal2 <= (sensorVal + 5)) && (sensorVal2 >= (sensorVal - 5))) // 5 ~2degrees
-        {
-          Serial.println("Temps close to same, keeping");
-          j = READ_ATTEMPTS; //  got a good reading, exit
-        }
-        else
-        {
-          Serial.println("Temps NOT close to same,check again");
-        }
-      }  
-      
-      // get Kelvin (for lm335 sensor)
-      double sensorKel = ((sensorVal/(double)1023)*(5*100)) + adcErrorCorrection[i];
       // get rid of decimal place, truncate anything after 2 places
-      int sensorTimeHundred = sensorKel * 100;
-      Serial.print("Sensor ");
-      Serial.print(i);
+      float garageTemp = sensors.getTempC(garageThermometer) + 273.15;
+      float outsideTemp = sensors.getTempC(outsideThermometer) + 273.15;
+      int garageSensorTimeHundred = garageTemp * 100;
+      int outsideSensorTimeHundred = outsideTemp * 100;
+      Serial.print("Garage ");
       Serial.print(" Kelvin: ");
-      Serial.println(sensorKel);
-      char msg[12];
-      sprintf(msg,"TMP1%d%d", i, sensorTimeHundred);
+      Serial.println(garageTemp);
       
+      Serial.print("Outside ");
+      Serial.print(" Kelvin: ");
+      Serial.println(outsideTemp);
+      
+      char msg[12];
+      //send messages
+      sprintf(msg,"TMP1%d%d", 0, garageSensorTimeHundred); //0 is garage
       sendVWmsg(msg);
-    }
+      
+      sprintf(msg,"TMP1%d%d", 1, outsideSensorTimeHundred); //1 is outside
+      sendVWmsg(msg);
+    
   }
   Serial.println(prevSeconds, DEC);
   Serial.println(millis()/1000);
 
   delay(1000);
 }
+
 
 // send message using virtualWire
 void sendVWmsg(char * msg)
@@ -159,16 +147,3 @@ void sendVWmsg(char * msg)
   
 }
 
-char *ftoa(char *a, double f, int precision)
-{
-  long p[] = {0,10,100,1000,10000,100000,1000000,10000000,100000000};
-  
-  char *ret = a;
-  long heiltal = (long)f;
-  itoa(heiltal, a, 10);
-  while (*a != '\0') a++;
-  *a++ = '.';
-  long desimal = abs((long)((f - heiltal) * p[precision]));
-  itoa(desimal, a, 10);
-  return ret;
-}
