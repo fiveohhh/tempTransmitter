@@ -1,3 +1,8 @@
+// Requires DallasTemperature library http://milesburton.com/Dallas_Temperature_Control_Library
+// virtualWire library http://www.open.com.au/mikem/arduino/
+// oneWire Library http://www.pjrc.com/teensy/td_libs_OneWire.html
+
+
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <VirtualWire.h>
@@ -7,9 +12,7 @@
 #undef double
 #undef float
 #undef round
-/*
 
- */
  
 void sendVWmsg(char * msg);
 
@@ -27,8 +30,8 @@ DeviceAddress garageThermometer = { 0x10, 0xA9, 0x30, 0x1A, 0x02, 0x08, 0x00, 0x
 DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
 
 
-// number of seconds between reads
-#define TEMP_INTERVAL 60
+// number of seconds between transmits
+#define TRANSMIT_INTERVAL 300
 
 #define DEBUG_INTERVAL 5 // number of seconds between reads during if debug pin is set
 
@@ -66,66 +69,57 @@ void setup() {
 }
 
 void loop() { 
-  int tempInterval = TEMP_INTERVAL;
+  int transmitInterval = TRANSMIT_INTERVAL;
   
   
   if (digitalRead(DEBUG_MODE_PIN) == HIGH)
   {
-     tempInterval = DEBUG_INTERVAL;
+     transmitInterval = DEBUG_INTERVAL;
   }
   
-  // get current door status
-  int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
-
-  if ((newDoorStatus == LOW) && (doorStatus == 1))
+   
+  unsigned long seconds = millis()/1000;
+  if ((prevSeconds == 0) || (seconds - prevSeconds) > (transmitInterval))
   {
-    // was open and now closed
-    //send update msg
+    // store time that this read/transmit is occuring
+    prevSeconds = millis()/1000;
+     
+     
+    // get temperature data
+    sensors.requestTemperatures();
+    delay(1000); // need to delay after request since we are using parasitic power
+
+    // get rid of decimal place, truncate anything after 2 places
+    float garageTemp = sensors.getTempC(garageThermometer) + 273.15;
+    float outsideTemp = sensors.getTempC(outsideThermometer) + 273.15;
+    int garageSensorTimeHundred = garageTemp * 100;
+    int outsideSensorTimeHundred = outsideTemp * 100;
+    
+    Serial.print("Garage ");
+    Serial.print(" Kelvin: ");
+    Serial.println(garageTemp);
+    
+    Serial.print("Outside ");
+    Serial.print(" Kelvin: ");
+    Serial.println(outsideTemp);
+    
+    
+    //transmit temperature status
+    char msg[12];
+    sprintf(msg,"TMP1%d%d", 0, garageSensorTimeHundred); //0 is garage
+    sendVWmsg(msg);
+    
+    sprintf(msg,"TMP1%d%d", 1, outsideSensorTimeHundred); //1 is outside
+    sendVWmsg(msg);
+      
+      
+    // get door status 
+    int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
     doorStatus = 0;
     char dmsg[12];
     sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 0);
       
     sendVWmsg(dmsg);
-  }
-  else if ((newDoorStatus == HIGH) && (doorStatus == 0))
-  {
-    // was closed and now open
-    //send update msg
-    doorStatus = 1;
-    char dmsg[12];
-    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 1);
-      
-    sendVWmsg(dmsg);
-  }
-  
-  
-  unsigned long seconds = millis()/1000;
-  if ((prevSeconds == 0) || (seconds - prevSeconds) > (tempInterval))
-  {
-     prevSeconds = millis()/1000;
-     sensors.requestTemperatures();
-     delay(1000); // need to delay after request since we are using parasitic power
-
-      // get rid of decimal place, truncate anything after 2 places
-      float garageTemp = sensors.getTempC(garageThermometer) + 273.15;
-      float outsideTemp = sensors.getTempC(outsideThermometer) + 273.15;
-      int garageSensorTimeHundred = garageTemp * 100;
-      int outsideSensorTimeHundred = outsideTemp * 100;
-      Serial.print("Garage ");
-      Serial.print(" Kelvin: ");
-      Serial.println(garageTemp);
-      
-      Serial.print("Outside ");
-      Serial.print(" Kelvin: ");
-      Serial.println(outsideTemp);
-      
-      char msg[12];
-      //send messages
-      sprintf(msg,"TMP1%d%d", 0, garageSensorTimeHundred); //0 is garage
-      sendVWmsg(msg);
-      
-      sprintf(msg,"TMP1%d%d", 1, outsideSensorTimeHundred); //1 is outside
-      sendVWmsg(msg);
     
   }
   Serial.println(prevSeconds, DEC);
