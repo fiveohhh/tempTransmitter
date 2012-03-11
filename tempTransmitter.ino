@@ -25,10 +25,12 @@ OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature. 
 DallasTemperature sensors(&oneWire);
 
+
+
 // device addresses
 DeviceAddress garageThermometer = { 0x10, 0xA9, 0x30, 0x1A, 0x02, 0x08, 0x00, 0xAF };
-DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
-
+//DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
+DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0xF3 }; // outdoor waterproof
 
 // number of seconds between transmits
 #define TRANSMIT_INTERVAL 300
@@ -118,7 +120,8 @@ void loop() {
     doorStatus = 0;
     char dmsg[12];
     sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 0);
-      
+    
+    // transmit door status
     sendVWmsg(dmsg);
     
   }
