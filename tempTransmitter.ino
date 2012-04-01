@@ -43,8 +43,6 @@ DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0
 
 #define GARAGE_DOOR_SENSOR_NUMBER 0 // Garage door sensor number is 0
 
-int doorStatus = 0; // 0 is closed and 1 is open.
-
 unsigned long prevSeconds = 0;
 
 void setup() {
@@ -117,9 +115,8 @@ void loop() {
       
     // get door status 
     int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
-    doorStatus = 0;
     char dmsg[12];
-    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, 0);
+    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, newDoorStatus);
     
     // transmit door status
     sendVWmsg(dmsg);
