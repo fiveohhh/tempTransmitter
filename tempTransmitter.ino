@@ -7,6 +7,12 @@
 #include <DallasTemperature.h>
 #include <VirtualWire.h>
 #include <EEPROM.h>
+
+#include <avr/interrupt.h>
+#include <avr/power.h>
+#include <avr/sleep.h>
+#include <avr/wdt.h>
+
 #undef int
 #undef abs
 #undef double
@@ -32,10 +38,7 @@ DeviceAddress garageThermometer = { 0x10, 0xA9, 0x30, 0x1A, 0x02, 0x08, 0x00, 0x
 //DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
 DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0xF3 }; // outdoor waterproof
 
-// number of seconds between transmits
-#define TRANSMIT_INTERVAL 300
 
-#define DEBUG_INTERVAL 5 // number of seconds between reads during if debug pin is set
 
 #define DEBUG_MODE_PIN 8 // pin to pull high if we want debug interval
 
@@ -43,10 +46,46 @@ DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0
 
 #define GARAGE_DOOR_SENSOR_NUMBER 0 // Garage door sensor number is 0
 
+#define SEND_INTERVAL 10 // every SEND_INTERVAL * 8seconds updates will be sent
+
+#define DEBUG_INTERVAL 1 // interval when debug is set
+
+
 unsigned long prevSeconds = 0;
+
+bool isDebug = false;
+
+int transmitInterval = SEND_INTERVAL;
+
+volatile int f_wdt=1;
+
+volatile int wdt_cntr = 0;
+
+
 
 void setup() {
   Serial.begin(57600);
+  
+  /*** Setup the WDT ***/
+  
+  /* Clear the reset flag. */
+  MCUSR &= ~(1<<WDRF);
+  
+  /* In order to change WDE or the prescaler, we need to
+   * set WDCE (This will allow updates for 4 clock cycles).
+   */
+  WDTCSR |= (1<<WDCE) | (1<<WDE);
+
+  /* set new watchdog timeout prescaler value */
+  WDTCSR = 1<<WDP0 | 1<<WDP3; /* 8.0 seconds */
+  
+  /* Enable the WD interrupt (note no reset). */
+  WDTCSR |= _BV(WDIE);
+  
+  if (digitalRead(DEBUG_MODE_PIN) == HIGH)
+  {
+     isDebug = true;
+  }
   
   // Initialise the IO and ISR
     vw_set_ptt_inverted(true); // Required for DR3100
@@ -65,23 +104,57 @@ void setup() {
   Serial.print("Found ");
   Serial.print(sensors.getDeviceCount(), DEC);
   Serial.println(" devices.");
-   
+  
+  // disable if not in debug?
+  if (isDebug)
+  {
+    
+    transmitInterval = DEBUG_INTERVAL;
+  }
 }
 
-void loop() { 
-  int transmitInterval = TRANSMIT_INTERVAL;
-  
-  
-  if (digitalRead(DEBUG_MODE_PIN) == HIGH)
+
+
+ISR(WDT_vect)
+{
+  if(f_wdt == 0)
   {
-     transmitInterval = DEBUG_INTERVAL;
+    f_wdt=1;
   }
-  
-   
-  unsigned long seconds = millis()/1000;
-  if ((prevSeconds == 0) || (seconds - prevSeconds) > (transmitInterval))
+  else
   {
-    // store time that this read/transmit is occuring
+    Serial.println("WDT Overrun!!!");
+  }
+}
+
+
+
+void loop() { 
+  if(f_wdt == 1)
+  {
+    Serial.println(wdt_cntr);
+    if ( wdt_cntr++ >= transmitInterval)
+    {
+      Serial.println("inside");
+      checkSensors();
+      wdt_cntr = 0;
+    }
+    /* Don't forget to clear the flag. */
+    f_wdt = 0;
+    
+    /* Re-enter sleep mode. */
+    enterSleep();
+  }
+  else
+  {
+    /* Do nothing. */
+  }
+
+}
+
+void checkSensors()
+{
+   // store time that this read/transmit is occuring
     prevSeconds = millis()/1000;
      
      
@@ -120,12 +193,19 @@ void loop() {
     
     // transmit door status
     sendVWmsg(dmsg);
-    
-  }
-  Serial.println(prevSeconds, DEC);
-  Serial.println(millis()/1000);
+}
 
-  delay(1000);
+void enterSleep()
+{
+  set_sleep_mode(SLEEP_MODE_PWR_SAVE);
+  
+  sleep_enable();
+  
+    /* The program will continue from here after the WDT timeout*/
+  sleep_disable(); /* First thing to do is disable sleep. */
+  
+  /* Re-enable the peripherals. */
+  power_all_enable();
 }
 
 
