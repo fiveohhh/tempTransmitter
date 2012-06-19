@@ -31,34 +31,28 @@ OneWire oneWire(ONE_WIRE_BUS);
 // Pass our oneWire reference to Dallas Temperature. 
 DallasTemperature sensors(&oneWire);
 
-
-
 // device addresses
 DeviceAddress garageThermometer = { 0x10, 0xA9, 0x30, 0x1A, 0x02, 0x08, 0x00, 0xAF };
-//DeviceAddress outsideThermometer = { 0x10, 0x05, 0xD5, 0x2A, 0x02, 0x08, 0x00, 0xCE };
 DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0xF3 }; // outdoor waterproof
 
 
 
-#define DEBUG_MODE_PIN 8 // pin to pull high if we want debug interval
+#define DEBUG_MODE_PIN              8 // pin to pull high if we want debug interval
+#define GARAGE_DOOR_PIN             7// figure this out when you get hardware up here
+#define GARAGE_DOOR_SENSOR_NUMBER   0 // Garage door sensor number is 0
+#define SEND_INTERVAL               10 // every SEND_INTERVAL * 8seconds updates will be sent
+#define DEBUG_INTERVAL              1 // interval when debug is set
 
-#define GARAGE_DOOR_PIN 7// figure this out when you get hardware up here
-
-#define GARAGE_DOOR_SENSOR_NUMBER 0 // Garage door sensor number is 0
-
-#define SEND_INTERVAL 10 // every SEND_INTERVAL * 8seconds updates will be sent
-
-#define DEBUG_INTERVAL 1 // interval when debug is set
-
-
-unsigned long prevSeconds = 0;
-
+// is debug pin set?
 bool isDebug = false;
 
+// initialize transmit interval
 int transmitInterval = SEND_INTERVAL;
 
+// wdt flag
 volatile int f_wdt=1;
 
+// software timer for transmit interval
 volatile int wdt_cntr = 0;
 
 
