@@ -38,10 +38,14 @@ DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0
 
 
 #define DEBUG_MODE_PIN              8 // pin to pull high if we want debug interval
-#define GARAGE_DOOR_PIN             7// figure this out when you get hardware up here
-#define GARAGE_DOOR_SENSOR_NUMBER   0 // Garage door sensor number is 0
-#define SEND_INTERVAL               10 // every SEND_INTERVAL * 8seconds updates will be sent
-#define DEBUG_INTERVAL              1 // interval when debug is set
+#define VW_TX_PIN                            10
+
+#define GARAGE_DOOR_00_PIN             7// figure this out when you get hardware up here
+#define GARAGE_DOOR_00_SENSOR_NUMBER   0 // first garage door sensor number is 0
+#define GARAGE_DOOR_01_PIN             9// figure this out when you get hardware up here
+#define GARAGE_DOOR_01_SENSOR_NUMBER   1 // second garage door number is 1
+#define SEND_INTERVAL               3 // every SEND_INTERVAL * 8seconds updates will be sent
+
 
 // is debug pin set?
 bool isDebug = false;
@@ -82,13 +86,16 @@ void setup() {
   }
   
   // Initialise the IO and ISR
+   vw_set_tx_pin(VW_TX_PIN);
     vw_set_ptt_inverted(true); // Required for DR3100
     vw_setup(2000);	 // Bits per sec
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
     digitalWrite(DEBUG_MODE_PIN, HIGH); // turn on pullups
-    pinMode(GARAGE_DOOR_PIN, INPUT);
-    digitalWrite(GARAGE_DOOR_PIN, HIGH); // turn on pullups
+    pinMode(GARAGE_DOOR_00_PIN, INPUT);
+    digitalWrite(GARAGE_DOOR_00_PIN, HIGH); // turn on pullups
+    pinMode(GARAGE_DOOR_01_PIN, INPUT);
+    digitalWrite(GARAGE_DOOR_01_PIN, HIGH); // turn on pullups
     
   // Start up the library
   sensors.begin();
@@ -181,9 +188,16 @@ void checkSensors()
       
       
     // get door status 
-    int newDoorStatus = digitalRead(GARAGE_DOOR_PIN);
+    int newDoorStatus = digitalRead(GARAGE_DOOR_00_PIN);
     char dmsg[12];
-    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_SENSOR_NUMBER, newDoorStatus);
+    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_00_SENSOR_NUMBER, newDoorStatus);
+    
+    // transmit door status
+    sendVWmsg(dmsg);
+    
+    // get door status 
+    newDoorStatus = digitalRead(GARAGE_DOOR_01_PIN);
+    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_01_SENSOR_NUMBER, newDoorStatus);
     
     // transmit door status
     sendVWmsg(dmsg);
