@@ -79,16 +79,13 @@ void setup() {
   
   /* Enable the WD interrupt (note no reset). */
   WDTCSR |= _BV(WDIE);
-  
-  if (digitalRead(DEBUG_MODE_PIN) == HIGH)
-  {
-     isDebug = true;
-  }
+
   
   // Initialise the IO and ISR
    vw_set_tx_pin(VW_TX_PIN);
     vw_set_ptt_inverted(true); // Required for DR3100
     vw_setup(2000);	 // Bits per sec
+   
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
     digitalWrite(DEBUG_MODE_PIN, HIGH); // turn on pullups
@@ -105,13 +102,7 @@ void setup() {
   Serial.print("Found ");
   Serial.print(sensors.getDeviceCount(), DEC);
   Serial.println(" devices.");
-  
-  // disable if not in debug?
-  if (isDebug)
-  {
-    
-    transmitInterval = DEBUG_INTERVAL;
-  }
+
 }
 
 
@@ -155,10 +146,7 @@ void loop() {
 
 void checkSensors()
 {
-   // store time that this read/transmit is occuring
-    prevSeconds = millis()/1000;
-     
-     
+
     // get temperature data
     sensors.requestTemperatures();
     delay(1000); // need to delay after request since we are using parasitic power
