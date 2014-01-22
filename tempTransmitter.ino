@@ -5,8 +5,12 @@
 
 #include <OneWire.h>
 #include <DallasTemperature.h>
-#include <VirtualWire.h>
 #include <EEPROM.h>
+
+#include <SPI.h>
+#include <RF24.h>
+#include "nRF24L01.h"
+#include "printf.h"
 
 #include <avr/interrupt.h>
 #include <avr/power.h>
@@ -20,7 +24,7 @@
 #undef round
 
  
-void sendVWmsg(char * msg);
+RF24 radio(8,6);
 
 // Data wire is plugged into port 2 on the Arduino
 #define ONE_WIRE_BUS 4
@@ -37,18 +41,13 @@ DeviceAddress outsideThermometer = { 0x28, 0x3F, 0xB3, 0xE3, 0x03, 0x00, 0x00, 0
 
 
 
-#define DEBUG_MODE_PIN              8 // pin to pull high if we want debug interval
-#define VW_TX_PIN                            10
+#define DEBUG_MODE_PIN              10 // pin to pull high if we want debug interval
 
 #define GARAGE_DOOR_00_PIN             7// figure this out when you get hardware up here
-#define GARAGE_DOOR_00_SENSOR_NUMBER   0 // first garage door sensor number is 0
+#define GARAGE_DOOR_00_SENSOR_NUMBER   48 // first garage door sensor number is 0
 #define GARAGE_DOOR_01_PIN             9// figure this out when you get hardware up here
-#define GARAGE_DOOR_01_SENSOR_NUMBER   1 // second garage door number is 1
-#define SEND_INTERVAL               3 // every SEND_INTERVAL * 8seconds updates will be sent
-
-
-// is debug pin set?
-bool isDebug = false;
+#define GARAGE_DOOR_01_SENSOR_NUMBER   49 // second garage door number is 1
+#define SEND_INTERVAL               1 // every SEND_INTERVAL * 8seconds updates will be sent
 
 // initialize transmit interval
 int transmitInterval = SEND_INTERVAL;
@@ -63,6 +62,23 @@ volatile int wdt_cntr = 0;
 
 void setup() {
   Serial.begin(57600);
+  printf_begin();
+  printf("\r\nRF24/examples/nordic_fob/\r\n");
+  
+  
+  radio.begin();
+  radio.setChannel(2);
+  //radio.setPayloadSize(4);
+  radio.enableDynamicPayloads();
+  radio.setAutoAck(true);
+  radio.setCRCLength(RF24_CRC_8);
+  radio.stopListening();
+  radio.openWritingPipe(0xE7E7E7E7E7LL);
+  
+  //
+  // Dump the configuration of the rf unit for debugging
+  //
+  radio.printDetails();
   
   /*** Setup the WDT ***/
   
@@ -81,11 +97,7 @@ void setup() {
   WDTCSR |= _BV(WDIE);
 
   
-  // Initialise the IO and ISR
-   vw_set_tx_pin(VW_TX_PIN);
-    vw_set_ptt_inverted(true); // Required for DR3100
-    vw_setup(2000);	 // Bits per sec
-   
+  
     analogReference(EXTERNAL);
     pinMode(DEBUG_MODE_PIN, INPUT);
     digitalWrite(DEBUG_MODE_PIN, HIGH); // turn on pullups
@@ -129,6 +141,7 @@ void loop() {
     {
       Serial.println("inside");
       checkSensors();
+      radio.printDetails();
       wdt_cntr = 0;
     }
     /* Don't forget to clear the flag. */
@@ -168,27 +181,33 @@ void checkSensors()
     
     //transmit temperature status
     char msg[12];
-    sprintf(msg,"TMP1%d%d", 0, garageSensorTimeHundred); //0 is garage
-    sendVWmsg(msg);
+    sprintf(msg,"TMP0%d%d", 0, garageSensorTimeHundred); //0 is garage
+    radio.write(msg,strlen(msg));
+   Serial.println(msg);
+   delay(100);
     
-    sprintf(msg,"TMP1%d%d", 1, outsideSensorTimeHundred); //1 is outside
-    sendVWmsg(msg);
-      
+    sprintf(msg,"TMP0%d%d", 1, outsideSensorTimeHundred); //1 is outside
+    radio.write(msg,strlen(msg));
+    Serial.println(msg);
+    Serial.println(strlen(msg));
+      delay(100);
       
     // get door status 
     int newDoorStatus = digitalRead(GARAGE_DOOR_00_PIN);
     char dmsg[12];
-    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_00_SENSOR_NUMBER, newDoorStatus);
+    sprintf(dmsg,"DOR%d%d", GARAGE_DOOR_00_SENSOR_NUMBER, newDoorStatus);
     
     // transmit door status
-    sendVWmsg(dmsg);
-    
+    radio.write(dmsg,strlen(dmsg));
+    Serial.println(dmsg);
+    delay(100);
     // get door status 
     newDoorStatus = digitalRead(GARAGE_DOOR_01_PIN);
-    sprintf(dmsg,"DOR1%d%d", GARAGE_DOOR_01_SENSOR_NUMBER, newDoorStatus);
+    sprintf(dmsg,"DOR%d%d", GARAGE_DOOR_01_SENSOR_NUMBER, newDoorStatus);
     
     // transmit door status
-    sendVWmsg(dmsg);
+    radio.write(dmsg,strlen(dmsg));
+    Serial.println(dmsg);
 }
 
 void enterSleep()
@@ -202,18 +221,5 @@ void enterSleep()
   
   /* Re-enable the peripherals. */
   power_all_enable();
-}
-
-
-// send message using virtualWire
-void sendVWmsg(char * msg)
-{
-  digitalWrite(13, true); // Flash a light to show transmitting
-  Serial.println(msg);
-  vw_send((uint8_t *)msg, strlen(msg));
-  vw_wait_tx(); // Wait until the whole message is gone
-  delay(1000);
-  digitalWrite(13, false);
-  
 }
 
